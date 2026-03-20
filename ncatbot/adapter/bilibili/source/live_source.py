@@ -60,6 +60,12 @@ class LiveSource(BaseSource):
 
         @self._danmaku.on("ALL")
         async def _on_all(event: dict) -> None:
+            # 开播事件：获取直播间信息附加到事件数据
+            if event.get("type") == "LIVE":
+                data = event.get("data", {})
+                if isinstance(data, dict) and data.get("live_time", 0):
+                    await self._attach_room_info(event)
+
             # 线程安全地将事件回调到主事件循环
             if self._main_loop is not None and self._main_loop.is_running():
                 asyncio.run_coroutine_threadsafe(
@@ -92,6 +98,25 @@ class LiveSource(BaseSource):
                 pass
             loop.close()
             self._loop = None
+
+    async def _attach_room_info(self, event: dict) -> None:
+        """在子线程事件循环中获取直播间信息并附加到事件数据。"""
+        try:
+            from bilibili_api.live import LiveRoom
+
+            room = LiveRoom(
+                room_display_id=self._room_id,
+                credential=self._credential,
+            )
+            raw_info = await room.get_room_info()
+            event["room_info"] = raw_info
+            LOG.info(
+                "直播源 %s 开播，已获取直播间信息: %s",
+                self._room_id,
+                raw_info.get("room_info", {}).get("title", ""),
+            )
+        except Exception:
+            LOG.warning("直播源 %s 获取直播间信息失败", self._room_id, exc_info=True)
 
     async def _connect_danmaku(self) -> None:
         """在独立事件循环中运行弹幕连接。"""
