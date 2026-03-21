@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, Union
+from typing import Any, Dict, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
+from ncatbot.utils.network import async_download_to_bytes, async_download_to_file
+from ncatbot.utils.config import get_config_manager
 
-if TYPE_CHECKING:
-    from ncatbot.types.common.segment.base import MessageSegment
+from .segment.base import MessageSegment
+from .segment.media import File, Image, Video, Record
 
 __all__ = [
     "AttachmentKind",
@@ -45,55 +47,60 @@ class Attachment(BaseModel):
     kind: AttachmentKind = AttachmentKind.OTHER
     extra: Dict[str, Any] = Field(default_factory=dict)
 
-    async def download(self, dest: Union[str, Path]) -> Path:
+    async def download(
+        self, dest: Union[str, Path], *, proxy: Optional[str] = None
+    ) -> Path:
         """下载附件到本地目录
 
         Parameters
         ----------
         dest : str | Path
             目标**目录**。文件将保存为 ``dest / self.name``。
+        proxy : str, optional
+            HTTP/SOCKS5 代理地址。省略时自动读取主配置 ``http_proxy``；
+            配置也为空则直连。
 
         Returns
         -------
         Path
             实际写入的文件路径。
         """
-        import aiohttp
+        if proxy is None:
+            try:
+                proxy = get_config_manager().config.http_proxy or None
+            except Exception:
+                proxy = None
 
-        dest = Path(dest)
-        dest.mkdir(parents=True, exist_ok=True)
-        filepath = dest / self.name
+        return await async_download_to_file(
+            self.url, dest, filename=self.name, proxy=proxy
+        )
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(self.url) as resp:
-                resp.raise_for_status()
-                filepath.write_bytes(await resp.read())
+    async def as_bytes(self, *, proxy: Optional[str] = None) -> bytes:
+        """下载到内存，返回原始字节
 
-        return filepath
+        Parameters
+        ----------
+        proxy : str, optional
+            HTTP/SOCKS5 代理地址。省略时自动读取主配置 ``http_proxy``。
+        """
+        if proxy is None:
+            try:
+                proxy = get_config_manager().config.http_proxy or None
+            except Exception:
+                proxy = None
 
-    async def as_bytes(self) -> bytes:
-        """下载到内存，返回原始字节"""
-        import aiohttp
+        return await async_download_to_bytes(self.url, proxy=proxy)
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(self.url) as resp:
-                resp.raise_for_status()
-                return await resp.read()
-
-    def to_segment(self) -> "MessageSegment":
+    def to_segment(self) -> MessageSegment:
         """转为消息段（直接使用 URL，同平台内转发最快）"""
-        from ncatbot.types.common.segment.media import File as FileSeg
-
-        return FileSeg(file=self.url, file_name=self.name, file_size=self.size)
+        return File(file=self.url, file_name=self.name, file_size=self.size)
 
     async def to_local_segment(
         self, cache_dir: Union[str, Path] = ".cache/attachments"
-    ) -> "MessageSegment":
+    ) -> MessageSegment:
         """先下载到本地，再转为消息段（跨平台安全）"""
-        from ncatbot.types.common.segment.media import File as FileSeg
-
         local = await self.download(cache_dir)
-        return FileSeg(file=str(local), file_name=self.name, file_size=self.size)
+        return File(file=str(local), file_name=self.name, file_size=self.size)
 
 
 class ImageAttachment(Attachment):
@@ -103,18 +110,14 @@ class ImageAttachment(Attachment):
     width: Optional[int] = None
     height: Optional[int] = None
 
-    def to_segment(self) -> "MessageSegment":
-        from ncatbot.types.common.segment.media import Image as ImageSeg
-
-        return ImageSeg(file=self.url, file_name=self.name, file_size=self.size)
+    def to_segment(self) -> MessageSegment:
+        return Image(file=self.url, file_name=self.name, file_size=self.size)
 
     async def to_local_segment(
         self, cache_dir: Union[str, Path] = ".cache/attachments"
-    ) -> "MessageSegment":
-        from ncatbot.types.common.segment.media import Image as ImageSeg
-
+    ) -> MessageSegment:
         local = await self.download(cache_dir)
-        return ImageSeg(file=str(local), file_name=self.name, file_size=self.size)
+        return Image(file=str(local), file_name=self.name, file_size=self.size)
 
 
 class VideoAttachment(Attachment):
@@ -123,18 +126,14 @@ class VideoAttachment(Attachment):
     kind: Literal[AttachmentKind.VIDEO] = AttachmentKind.VIDEO
     duration: Optional[int] = None
 
-    def to_segment(self) -> "MessageSegment":
-        from ncatbot.types.common.segment.media import Video as VideoSeg
-
-        return VideoSeg(file=self.url, file_name=self.name, file_size=self.size)
+    def to_segment(self) -> MessageSegment:
+        return Video(file=self.url, file_name=self.name, file_size=self.size)
 
     async def to_local_segment(
         self, cache_dir: Union[str, Path] = ".cache/attachments"
-    ) -> "MessageSegment":
-        from ncatbot.types.common.segment.media import Video as VideoSeg
-
+    ) -> MessageSegment:
         local = await self.download(cache_dir)
-        return VideoSeg(file=str(local), file_name=self.name, file_size=self.size)
+        return Video(file=str(local), file_name=self.name, file_size=self.size)
 
 
 class AudioAttachment(Attachment):
@@ -143,18 +142,14 @@ class AudioAttachment(Attachment):
     kind: Literal[AttachmentKind.AUDIO] = AttachmentKind.AUDIO
     duration: Optional[int] = None
 
-    def to_segment(self) -> "MessageSegment":
-        from ncatbot.types.common.segment.media import Record as RecordSeg
-
-        return RecordSeg(file=self.url, file_name=self.name, file_size=self.size)
+    def to_segment(self) -> MessageSegment:
+        return Record(file=self.url, file_name=self.name, file_size=self.size)
 
     async def to_local_segment(
         self, cache_dir: Union[str, Path] = ".cache/attachments"
-    ) -> "MessageSegment":
-        from ncatbot.types.common.segment.media import Record as RecordSeg
-
+    ) -> MessageSegment:
         local = await self.download(cache_dir)
-        return RecordSeg(file=str(local), file_name=self.name, file_size=self.size)
+        return Record(file=str(local), file_name=self.name, file_size=self.size)
 
 
 class FileAttachment(Attachment):
@@ -162,15 +157,11 @@ class FileAttachment(Attachment):
 
     kind: Literal[AttachmentKind.FILE] = AttachmentKind.FILE
 
-    def to_segment(self) -> "MessageSegment":
-        from ncatbot.types.common.segment.media import File as FileSeg
-
-        return FileSeg(file=self.url, file_name=self.name, file_size=self.size)
+    def to_segment(self) -> MessageSegment:
+        return File(file=self.url, file_name=self.name, file_size=self.size)
 
     async def to_local_segment(
         self, cache_dir: Union[str, Path] = ".cache/attachments"
-    ) -> "MessageSegment":
-        from ncatbot.types.common.segment.media import File as FileSeg
-
+    ) -> MessageSegment:
         local = await self.download(cache_dir)
-        return FileSeg(file=str(local), file_name=self.name, file_size=self.size)
+        return File(file=str(local), file_name=self.name, file_size=self.size)
