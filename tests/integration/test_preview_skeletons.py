@@ -185,7 +185,7 @@ async def test_pv04_webhook_triggers_notification():
 
         h.bot.handler_dispatcher.register_handler("message.group", on_webhook)
 
-        await h.inject(group_message("webhook_trigger", group_id="201487478"))
+        await h.inject(group_message("webhook_trigger", group_id="123456"))
         await h.settle(0.1)
 
         assert notification_sent

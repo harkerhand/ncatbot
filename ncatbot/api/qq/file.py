@@ -39,6 +39,13 @@ class QQFile:
         （自动下载到临时目录后上传）。当 ``file`` 为 ``Attachment`` 且未指定
         ``name`` 时，自动使用 ``att.name``。
         """
+        log.debug(
+            "正在上传文件到群 %s: file=%s, name=%s, folder_id=%s",
+            group_id,
+            file,
+            name,
+            folder_id,
+        )
         path_str, resolved_name, tmp_dir = await self._resolve_file(file, name)
         try:
             await self._api.upload_group_file(
@@ -128,6 +135,9 @@ class QQFile:
         """
         if target_type == "group":
             if folder and not folder_id:
+                log.debug(
+                    "正在获取或创建群文件夹 '%s'（group_id=%s）", folder, target_id
+                )
                 folder_id = await self.get_or_create_group_folder(target_id, folder)
             await self.upload_group_file(
                 target_id, file=attachment, name=attachment.name, folder_id=folder_id
