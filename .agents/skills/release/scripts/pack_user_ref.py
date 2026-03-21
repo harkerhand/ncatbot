@@ -9,7 +9,6 @@
 """
 
 import argparse
-import shutil
 import subprocess
 import sys
 import zipfile
@@ -18,6 +17,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[4]
 
 PACK_DIRS = ["examples", ".agents/skills", "docs"]
+
+# 跳过的目录名（任何层级）
+SKIP_DIRS = {"__pycache__", "node_modules", ".git", ".vuepress"}
+
+# 跳过的文件名
+SKIP_FILES = {"package-lock.json"}
+
+# 跳过的扩展名
+SKIP_EXTS: set[str] = set()
 
 
 def _get_version_from_tag() -> str:
@@ -35,7 +43,7 @@ def _get_version_from_tag() -> str:
 
 
 def _collect_files() -> list[Path]:
-    """收集待打包文件，排除 __pycache__。"""
+    """收集待打包文件，排除构建产物和大型媒体文件。"""
     files: list[Path] = []
     for d in PACK_DIRS:
         base = ROOT / d
@@ -43,8 +51,15 @@ def _collect_files() -> list[Path]:
             print(f"  [SKIP] {d}/ 不存在")
             continue
         for f in base.rglob("*"):
-            if f.is_file() and "__pycache__" not in f.parts:
-                files.append(f)
+            if not f.is_file():
+                continue
+            if SKIP_DIRS & set(f.parts):
+                continue
+            if f.name in SKIP_FILES:
+                continue
+            if f.suffix.lower() in SKIP_EXTS:
+                continue
+            files.append(f)
     return files
 
 
@@ -64,9 +79,7 @@ def main() -> int:
     )
 
     dist = ROOT / "dist"
-    if dist.exists():
-        shutil.rmtree(dist)
-    dist.mkdir()
+    dist.mkdir(exist_ok=True)
 
     zip_name = f"ncatbot5-{version}-user-reference.zip"
     zip_path = dist / zip_name
@@ -75,6 +88,11 @@ def main() -> int:
     print(f"收集到 {len(files)} 个文件")
 
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        # 打包额外的 README.md 到 zip 根目录
+        readme = ROOT / "assets" / "user-ref-README.md"
+        if readme.exists():
+            zf.write(readme, "README.md")
+
         for f in files:
             arcname = f.relative_to(ROOT).as_posix()
             zf.write(f, arcname)

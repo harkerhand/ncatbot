@@ -47,21 +47,7 @@ jobs:
           password: ${{ secrets.PYPI_TOKEN }}
 
       - name: Package user reference
-        run: |
-          VERSION=${GITHUB_REF_NAME#v}
-          mkdir -p dist/_pack_temp
-          for dir in examples .agents/skills docs; do
-            if [ -d "$dir" ]; then
-              find "$dir" -type f ! -path '*__pycache__*' | while read f; do
-                mkdir -p "dist/_pack_temp/$(dirname "$f")"
-                cp "$f" "dist/_pack_temp/$f"
-              done
-            fi
-          done
-          cd dist/_pack_temp
-          zip -r "../ncatbot5-${VERSION}-user-reference.zip" .
-          cd ../..
-          rm -rf dist/_pack_temp
+        run: uv run python .agents/skills/release/scripts/pack_user_ref.py --version ${GITHUB_REF_NAME#v}
 
       - name: Generate release notes
         run: |
