@@ -68,3 +68,9 @@ dev/
 
 # === Large test fixtures (generated locally) ===
 tests/fixtures/real_group_messages.json
+
+# === Release ===
+release-notes.md
+
+# === Local notes ===
+memory/
